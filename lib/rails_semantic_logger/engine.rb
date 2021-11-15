@@ -33,57 +33,61 @@ module RailsSemanticLogger
     initializer :initialize_logger, group: :all do
       config = Rails.application.config
 
+      # PATCH - we do this ourseslves and allow ability to set log level with env
       # Set the default log level based on the Rails config
-      SemanticLogger.default_level = config.log_level
+      #SemanticLogger.default_level = config.log_level
 
       if defined?(Rails::Rack::Logger) && config.rails_semantic_logger.semantic
         config.middleware.swap(Rails::Rack::Logger, RailsSemanticLogger::Rack::Logger, config.log_tags)
       end
 
+      # PATCH - want to set own appenders and not have config overidden here
       # Existing loggers are ignored because servers like trinidad supply their
       # own file loggers which would result in duplicate logging to the same log file
-      Rails.logger = config.logger =
-        begin
-          if config.rails_semantic_logger.add_file_appender
-            path = config.paths["log"].first
-            FileUtils.mkdir_p(File.dirname(path)) unless File.exist?(File.dirname(path))
+      # Rails.logger = config.logger =
+      #   begin
+      #     if config.rails_semantic_logger.add_file_appender
+      #       path = config.paths["log"].first
+      #       FileUtils.mkdir_p(File.dirname(path)) unless File.exist?(File.dirname(path))
 
-            # Add the log file to the list of appenders
-            # Use the colorized formatter if Rails colorized logs are enabled
-            ap_options = config.rails_semantic_logger.ap_options
-            formatter  = config.rails_semantic_logger.format
-            formatter  = {color: {ap: ap_options}} if (formatter == :default) && (config.colorize_logging != false)
+      #       # Add the log file to the list of appenders
+      #       # Use the colorized formatter if Rails colorized logs are enabled
+      #       ap_options = config.rails_semantic_logger.ap_options
+      #       formatter  = config.rails_semantic_logger.format
 
-            # Set internal logger to log to file only, in case another appender experiences errors during writes
-            appender                         = SemanticLogger::Appender::File.new(
-              file_name: path,
-              level:     config.log_level,
-              formatter: formatter
-            )
-            appender.name                    = "SemanticLogger"
-            SemanticLogger::Processor.logger = appender
+      #       # PATCH
+      #       #formatter  = {color: {ap: ap_options}} if (formatter == :default) && (config.colorize_logging != false)
 
-            # Check for previous file or stdout loggers
-            SemanticLogger.appenders.each { |app| app.formatter = formatter if app.is_a?(SemanticLogger::Appender::File) }
-            SemanticLogger.add_appender(file_name: path, formatter: formatter, filter: config.rails_semantic_logger.filter)
-          end
+      #       # Set internal logger to log to file only, in case another appender experiences errors during writes
+      #       appender                         = SemanticLogger::Appender::File.new(
+      #         file_name: path,
+      #         level:     config.log_level,
+      #         formatter: formatter
+      #       )
+      #       appender.name                    = "SemanticLogger"
+      #       SemanticLogger::Processor.logger = appender
 
-          SemanticLogger[Rails]
-        rescue StandardError => e
-          # If not able to log to file, log to standard error with warning level only
-          SemanticLogger.default_level = :warn
+      #       # Check for previous file or stdout loggers
+      #       SemanticLogger.appenders.each { |app| app.formatter = formatter if app.is_a?(SemanticLogger::Appender::File) }
+      #       SemanticLogger.add_appender(file_name: path, formatter: formatter, filter: config.rails_semantic_logger.filter)
+      #     end
 
-          SemanticLogger::Processor.logger = SemanticLogger::Appender::File.new(io: STDERR)
-          SemanticLogger.add_appender(io: STDERR)
+      #     SemanticLogger[Rails]
+      #   rescue StandardError => e
+      #     # If not able to log to file, log to standard error with warning level only
+      #     SemanticLogger.default_level = :warn
 
-          logger = SemanticLogger[Rails]
-          logger.warn(
-            "Rails Error: Unable to access log file. Please ensure that #{path} exists and is chmod 0666. " \
-              "The log level has been raised to WARN and the output directed to STDERR until the problem is fixed.",
-            e
-          )
-          logger
-        end
+      #     SemanticLogger::Processor.logger = SemanticLogger::Appender::File.new(io: STDERR)
+      #     SemanticLogger.add_appender(io: STDERR)
+
+      #     logger = SemanticLogger[Rails]
+      #     logger.warn(
+      #       "Rails Error: Unable to access log file. Please ensure that #{path} exists and is chmod 0666. " \
+      #         "The log level has been raised to WARN and the output directed to STDERR until the problem is fixed.",
+      #       e
+      #     )
+      #     logger
+      #   end
 
       # Replace Rails loggers
       %i[active_record action_controller action_mailer action_view].each do |name|
@@ -215,14 +219,17 @@ module RailsSemanticLogger
       # Re-open appenders after Spring has forked a process
       Spring.after_fork { |_job| ::SemanticLogger.reopen } if defined?(Spring.after_fork)
 
-      console do |_app|
-        # Don't use a background thread for logging
-        SemanticLogger.sync!
-        SemanticLogger.add_appender(io: STDERR, formatter: :color)
+      # PATCH - turn this off as we already do this in our early config and it causes
+      # warning log entry that isn't formatted correctly.  we also want control over
+      # backtrace level separately from default_level.
+      # console do |_app|
+      #   # Don't use a background thread for logging
+      #   SemanticLogger.sync!
+      #   SemanticLogger.add_appender(io: STDERR, formatter: :color)
 
-        # Include method names on log entries in the console
-        SemanticLogger.backtrace_level = SemanticLogger.default_level
-      end
+      #   # Include method names on log entries in the console
+      #   SemanticLogger.backtrace_level = SemanticLogger.default_level
+      # end
     end
   end
 end
